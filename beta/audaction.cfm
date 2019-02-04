@@ -3425,6 +3425,7 @@ the variable will be sure to change value.  -CJ 05/09/2005 --->
 			<cfset variables.extension.insRecord(created_by=request.user.accessName,created_date = now(),scope_siteID=form.siteID,recordset =variables.extensionRecordSet)> 	
 		</cfif>
 	</cfif>
+	
 	<!--- ENDS approvals section on EDIT mode --->
 			<CFMODULE TEMPLATE="#Request.Library.CustomTags.VirtualPath#additionalFields.cfm"
 				  siteid="#form.siteid#"
