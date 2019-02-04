@@ -36,9 +36,6 @@ Brien Hodges	10/05/04	Auto Add Permissions for CV
 Angel Cisneros  05/22/06	Copy selected attachments to another site
 Brien Hodges	04/11/07	Add New Root Cause options
 --->
-
-<!--- dev --->
-
 <cfset request.ATSAuditName = ""/><!--- Don't remove --->
 <cfparam name="variables.auditNameNumberLabel" default="Action Name/Number"/>
 <cfparam name="variables.phoneLabel" default="Contact Phone"/>
