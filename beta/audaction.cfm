@@ -3430,6 +3430,7 @@ the variable will be sure to change value.  -CJ 05/09/2005 --->
 			<CFSET Effectivity2 = Right(FORM.Effectivity, Len(FORM.Effectivity) - 100)>
 		</CFIF>
 
+		
 
 	<CFQUERY Name="UpdateFinding" DATASOURCE="#ODBC#">
 		UPDATE TblAudit
