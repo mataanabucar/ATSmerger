@@ -4996,6 +4996,7 @@ function popupattach(loc,win_no) {
 
 </CFIF>
 
+
 <CFIF FORM.firstAction NEQ "Delete">
 
 	<CFSET sURL = "#sCurrentURL#audfinding.cfm?ID=#variables.FindingID#&Org=#Org#&Loc=#EncodeForURL(Form.Location)#&FactoryID=#EncodeForURL(FactoryID)#">
