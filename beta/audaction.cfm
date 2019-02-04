@@ -36,7 +36,6 @@ Brien Hodges	10/05/04	Auto Add Permissions for CV
 Angel Cisneros  05/22/06	Copy selected attachments to another site
 Brien Hodges	04/11/07	Add New Root Cause options
 --->
-
 <cfset request.ATSAuditName = ""/><!--- Don't remove --->
 <cfparam name="variables.auditNameNumberLabel" default="Action Name/Number"/>
 <cfparam name="variables.phoneLabel" default="Contact Phone"/>
@@ -67,6 +66,12 @@ Brien Hodges	04/11/07	Add New Root Cause options
 <!--- set variable to show CoResponPerson in GE Non-Industrial --->
 <cfset variables.showCoResponPerson = go.getSetupVar(var="ats_showCoResponPerson",default=false)/>
 <cfset variables.isCoResponPersonRequired = go.getSetupVar(var="ats_isCoResponPersonRequired",default=false)/>
+<cfset variables.iAndi = api.go.getSetupVar(var="ats_IsInitialAndInjuryIntegrated", default=false)> 
+
+
+<cfif variables.iAndi>
+	<cfparam name="form.AttachTempRefID_RCA" default="">
+</cfif>
 
 <!--- All new params please inside the cfscript, thanks! --->
 <cfscript>
@@ -95,6 +100,12 @@ Brien Hodges	04/11/07	Add New Root Cause options
 <CFPARAM NAME="Form.AuditName" DEFAULT="">
 <cfparam name="Form.coResponPerson" default="">
 <cfparam name="coResponPersonValidation" default="12/14/2017">
+
+<cfparam name="form.Case_Immediate_Cause_NA" default="0">
+<cfparam name="form.Case_Personal_NA" default="0">
+<cfparam name="form.Case_Unsafe_Act_NA" default="0">
+<cfparam name="form.Case_Root_Cause_NA" default="0">
+
 <CFSET Lookup = CreateObject("component", "#Library.CFC.DotPath#.lookup.audit").init(odbc)>
 
 <CFSET Translator = CreateObject("component", "#Library.CFC.DotPath#.TranslationPage").init(GroupPage="audaction.cfm")>
@@ -105,6 +116,8 @@ Brien Hodges	04/11/07	Add New Root Cause options
 <!--- Get Auto Escalation variables --->
 <cfset variables.autoEscalation_enable = api.go.getSetupVar(var="autoEscalation_enable",default=false)/>
 <cfset variables.AutoEscalation_EscalationDays = go.getSetupVar(var="AutoEscalation_EscalationDays",default=5)/>
+
+
 
 <!--- AJAX action for updating the closure verifier person from the status page --->
 <CFIF FORM.Action IS "UpdateVerifyBy">
@@ -251,7 +264,7 @@ rewritting the entire page, it was the quickest method --->
         --->
         <CFTRY>
             <CFQUERY NAME="qGetData" DATASOURCE="#ODBC#">
-                DELETE FROM ####ATS_REDIRECT_DATA WHERE UpdateDate <= DateAdd(d, -2, getDate());
+                DELETE FROM ####ATS_REDIRECT_DATA WHERE UpdateDate <= DateAdd(d, -1, getDate());
  
                 SELECT Data
                 FROM ####ATS_REDIRECT_DATA
@@ -332,6 +345,9 @@ rewritting the entire page, it was the quickest method --->
 <cfparam name="form.orgname" default="">
 <cfparam name="form.siteID" default="">
 <cfparam name="form.orgid" default="">
+
+
+
 
 <cfparam name="form.firstAction" default="#form.Action#">
 <cfif form.firstAction is "edit">
@@ -799,6 +815,8 @@ the variable will be sure to change value.  -CJ 05/09/2005 --->
 <CFPARAM NAME="FORM.CorrectiveAction" DEFAULT="">
 <CFSET VerifyComment = Trim(VerifyComment)>
 <CFSET FORM.Description = Trim(FORM.Description)>
+<!--- Stripping off the html table --->
+<CFSET FORM.Description = REReplaceNoCase(FORM.Description,"<[^>]*>","","ALL")>
 <CFSET FORM.CorrectiveAction = Trim(FORM.CorrectiveAction)>
 <CFSET FORM.CloseComment = Trim(FORM.CloseComment)>
 <cftry>
@@ -1936,7 +1954,21 @@ the variable will be sure to change value.  -CJ 05/09/2005 --->
 	</CFQUERY>
 	<CFSET FORM.tblAuditID = GetAuditID.tblAuditID>
 
-
+	<!--- Mataan Abucar 1-28-19 : I&I integration (if activated, below code updates attachments TempRefID accociated with I&I form)	--->
+	<cfif variables.iAndi>
+		<cfif structkeyexists(form,"AttachTempRefID_RCA") and trim(form.AttachTempRefID_RCA) neq "">
+			<cfset stInit = StructNew()>
+			<cfset stInit.BusinessID = BusinessID>
+			<cfset stInit.AppID = request.App.AppID>
+			<cfset stInit.SiteID = SiteID>
+			<cfset stInit.ODBC = #CC_ODBC#>
+			<cfset objAttach = CreateObject("component", "#Library.CFC.DotPath#.attach").init(argumentCollection = stInit)>
+			<cfset methodSuccess = objAttach.UpdateRefID(
+									NewRefID=GetAuditID.tblAuditID,
+									RefID=form.AttachTempRefID_RCA,
+									RefType="Audit")>
+		</cfif>
+	</cfif>
 
 
 	<!--- Log CR history for escalation to ATS : Loveena D 18th May 2016  --->
@@ -1997,6 +2029,41 @@ the variable will be sure to change value.  -CJ 05/09/2005 --->
 		</cfif>
 	</cfif>
 
+		<!--- 23-Jan-2019: Rahul Jha - if I & I integration activated then add to respective tables to map it --->
+	<!--- 1) I am not convinced this break approach, this violates DB ACID properties, 
+		     the entire set of Inserts, including the above, should be in transaction 
+	--->
+	<!--- I & I start<cfdump var="tblAuditID" />
+	<cfoutput>#IsNumeric(FORM.tblAuditID)#</cfoutput>
+	<cfdump var="#FORM.tblAuditID#" abort/> --->
+	
+	<cfif variables.iAndi>
+	
+		<cfset audit.addImmediateCause(
+								   ntblAuditID = LSParseNumber(FORM.tblAuditID)
+								 , sPrimaryCause = Trim(FORM.CASE_UNSAFE_ACT)
+								 , sSecondaryCause = Trim(FORM.CASE_PERSONAL)
+								 , sTertiaryCause = Trim(FORM.CASE_IMMEDIATE_CAUSE)
+								 , bPendingApproval_CASE_IMMEDIATE_CAUSE = form.Case_Immediate_Cause_NA
+								 , bPendingApproval_CASE_PERSONAL = form.Case_Personal_NA
+								 , bPendingApproval_CASE_UNSAFE_ACT = form.Case_Unsafe_Act_NA
+								) />
+								
+		<cfset audit.addRootCause(
+							  ntblAuditID = LSParseNumber(FORM.tblAuditID)
+							, sRootCause = Trim(FORM.Case_Root_Cause)
+							, sRootCauseDescription = Trim(FORM.Case_Desc_Root_Cause)
+							, bPendingApproval_CASE_BASIC_CAUSE=form.Case_Root_Cause_NA
+						  ) />
+		
+		<cfset audit.addMgmtSystems(
+							   ntblAuditID = LSParseNumber(FORM.tblAuditID)
+							 , sPrincipal = Trim(FORM.mgmt_sys_failure)
+							 , sAdditional = Trim(FORM.mgmt_sys_failure_sec)
+							) />
+								
+	</cfif>
+	<!--- I & I end --->
 
 	<!--- Cisneros	5/22/2006 --->
 	<cfparam name="ECfile" default="0">
@@ -2373,24 +2440,14 @@ the variable will be sure to change value.  -CJ 05/09/2005 --->
 			AND VersionNo = <CF_QUERYPARAM CFSQLTYPE="CF_SQL_BIGINT" VALUE="#VersionNo#">
 	</CFQUERY>
 
-	
 	<CFQUERY NAME="qInsertHistory" DATASOURCE="#ODBC#">
-		IF NOT EXISTS (
-			SELECT VersionNo,#ColumnList#
-			FROM TblAudit_Archive WITH (NOLOCK)
-			WHERE OrgName =<CF_QUERYPARAM CFSQLTYPE="CF_SQL_VARCHAR" VALUE="#OName#">
-				AND Location = <CF_QUERYPARAM CFSQLTYPE="CF_SQL_VARCHAR" VALUE="#Form.Location#">
-				AND ID = <CF_QUERYPARAM CFSQLTYPE="CF_SQL_BIGINT" VALUE="#FORM.ID#">
-				AND VersionNo = '#VersionNo#')
-		BEGIN
-			INSERT INTO TblAudit_Archive
-			(VersionNo,#ColumnList#)
-			SELECT #VersionNo#,#ColumnList#
-			FROM TblAudit WITH (NOLOCK)
-			WHERE OrgName =<CF_QUERYPARAM CFSQLTYPE="CF_SQL_VARCHAR" VALUE="#OName#">
-				AND Location = <CF_QUERYPARAM CFSQLTYPE="CF_SQL_VARCHAR" VALUE="#Form.Location#">
-				AND ID = <CF_QUERYPARAM CFSQLTYPE="CF_SQL_BIGINT" VALUE="#FORM.ID#">
-		END
+		INSERT INTO TblAudit_Archive
+		(VersionNo,#ColumnList#)
+		SELECT #VersionNo#,#ColumnList#
+		FROM TblAudit WITH (NOLOCK)
+		WHERE OrgName =<CF_QUERYPARAM CFSQLTYPE="CF_SQL_VARCHAR" VALUE="#OName#">
+			AND Location = <CF_QUERYPARAM CFSQLTYPE="CF_SQL_VARCHAR" VALUE="#Form.Location#">
+			AND ID = <CF_QUERYPARAM CFSQLTYPE="CF_SQL_BIGINT" VALUE="#FORM.ID#">
 	</CFQUERY>
 
 	<CFMODULE TEMPLATE="#Request.Library.CustomTags.VirtualPath#GetAttachments.cfm"
@@ -2725,6 +2782,84 @@ the variable will be sure to change value.  -CJ 05/09/2005 --->
 		<cfset DetailsSummary[ArrayLen(DetailsSummary)].Title = ClosureDueDateLabel>
 		<cfset DetailsSummary[ArrayLen(DetailsSummary)].Value = DateFormat(Form.ClosureDueDate, 'd-mmm-yy')>
 	</cfif>
+
+
+
+	<cfif variables.iAndi>
+		<cfset variables.RCApending = 'Pending Investigation'>
+
+		<cfif FORM.Case_Unsafe_Act_NA eq '1'>
+			<CFSET Details[ArrayLen(Details)+1] = StructNew()>
+			<cfset Details[ArrayLen(Details)].Title = 'Primary Cause'>
+			<cfset Details[ArrayLen(Details)].Value = variables.RCApending>	
+		<cfelse>
+			<cfif FORM.CASE_UNSAFE_ACT is not "">
+				<CFSET Details[ArrayLen(Details)+1] = StructNew()>
+				<cfset Details[ArrayLen(Details)].Title = 'Primary Cause'>
+				<cfset Details[ArrayLen(Details)].Value = FORM.CASE_UNSAFE_ACT>
+			</cfif>
+		</cfif>
+
+		
+		<cfif FORM.Case_Personal_NA eq '1'>
+			<CFSET Details[ArrayLen(Details)+1] = StructNew()>
+			<cfset Details[ArrayLen(Details)].Title = 'Secondary Cause'>
+			<cfset Details[ArrayLen(Details)].Value = variables.RCApending>
+		<cfelse>
+			<cfif FORM.CASE_PERSONAL is not "">
+				<CFSET Details[ArrayLen(Details)+1] = StructNew()>
+				<cfset Details[ArrayLen(Details)].Title = 'Secondary Cause'>
+				<cfset Details[ArrayLen(Details)].Value = FORM.CASE_PERSONAL>
+			</cfif>
+		</cfif>
+
+		<cfif FORM.Case_Immediate_Cause_NA eq '1'>
+			<CFSET Details[ArrayLen(Details)+1] = StructNew()>
+			<cfset Details[ArrayLen(Details)].Title = 'Tertiary Cause'>
+			<cfset Details[ArrayLen(Details)].Value = variables.RCApending>
+		<cfelse>
+			<cfif FORM.CASE_IMMEDIATE_CAUSE is not "">
+				<CFSET Details[ArrayLen(Details)+1] = StructNew()>
+				<cfset Details[ArrayLen(Details)].Title = 'Tertiary Cause'>
+				<cfset Details[ArrayLen(Details)].Value = FORM.CASE_IMMEDIATE_CAUSE>
+			</cfif>
+		</cfif>
+		
+		<cfif FORM.Case_Root_Cause_NA eq '1'>
+			<CFSET Details[ArrayLen(Details)+1] = StructNew()>
+			<cfset Details[ArrayLen(Details)].Title = 'Job Factor'>
+			<cfset Details[ArrayLen(Details)].Value = variables.RCApending>
+		<cfelse>
+			<cfif FORM.Case_Root_Cause is not "">
+				<CFSET Details[ArrayLen(Details)+1] = StructNew()>
+				<cfset Details[ArrayLen(Details)].Title = 'Job Factor'>
+				<cfset Details[ArrayLen(Details)].Value = FORM.Case_Root_Cause>
+			</cfif>
+		</cfif>
+		
+		<cfif FORM.Case_Desc_Root_Cause is not "">
+			<CFSET Details[ArrayLen(Details)+1] = StructNew()>
+			<cfset Details[ArrayLen(Details)].Title = 'Descriptive Root Cause'>
+			<cfset Details[ArrayLen(Details)].Value = FORM.Case_Desc_Root_Cause>
+		</cfif>
+		
+		<cfif FORM.mgmt_sys_failure is not "">
+			<CFSET Details[ArrayLen(Details)+1] = StructNew()>
+			<cfset Details[ArrayLen(Details)].Title = 'Principal Mgmt System Applicable'>
+			<cfset Details[ArrayLen(Details)].Value = FORM.mgmt_sys_failure>
+			
+		</cfif>
+
+		<cfif FORM.mgmt_sys_failure_sec is not "">
+			<CFSET Details[ArrayLen(Details)+1] = StructNew()>
+			<cfset Details[ArrayLen(Details)].Title = 'Additional Mgmt System Applicable'>
+			<cfset Details[ArrayLen(Details)].Value = FORM.mgmt_sys_failure_sec>
+			
+		</cfif>
+	</cfif>
+	
+
+
 
 	<!--- additional fields  --->
 	<CFSET FieldData = StructNew()>
@@ -3295,6 +3430,7 @@ the variable will be sure to change value.  -CJ 05/09/2005 --->
 			<CFSET Effectivity2 = Right(FORM.Effectivity, Len(FORM.Effectivity) - 100)>
 		</CFIF>
 
+		
 
 	<CFQUERY Name="UpdateFinding" DATASOURCE="#ODBC#">
 		UPDATE TblAudit
@@ -3404,6 +3540,34 @@ the variable will be sure to change value.  -CJ 05/09/2005 --->
 			and  ID =<CF_QUERYPARAM VALUE="#Form.ID#" CFSQLTYPE="CF_SQL_BIGINT">
 	</CFQUERY>
 
+	<cfif variables.iAndi>
+	
+		<cfset audit.updateImmediateCause(
+								   ntblAuditID = LSParseNumber(FORM.tblAuditID)
+								 , sPrimaryCause = Trim(FORM.CASE_UNSAFE_ACT)
+								 , sSecondaryCause = Trim(FORM.CASE_PERSONAL)
+								 , sTertiaryCause = Trim(FORM.CASE_IMMEDIATE_CAUSE)
+								 , bPendingApproval_CASE_IMMEDIATE_CAUSE = form.Case_Immediate_Cause_NA
+								 , bPendingApproval_CASE_PERSONAL = form.Case_Personal_NA
+								 , bPendingApproval_CASE_UNSAFE_ACT = form.Case_Unsafe_Act_NA
+								 
+								) />
+								
+		<cfset audit.updateRootCause(
+							  ntblAuditID = LSParseNumber(FORM.tblAuditID)
+							, sRootCause = Trim(FORM.Case_Root_Cause)
+							, sRootCauseDescription = Trim(FORM.Case_Desc_Root_Cause)
+							, bPendingApproval_CASE_BASIC_CAUSE=form.Case_Root_Cause_NA
+						  ) />
+		
+		<cfset audit.updateMgmtSystems(
+							   ntblAuditID = LSParseNumber(FORM.tblAuditID)
+							 , sPrincipal = Trim(FORM.mgmt_sys_failure)
+							 , sAdditional = Trim(FORM.mgmt_sys_failure_sec)
+							) />
+								
+	</cfif>
+	<!--- I & I end --->
 	<!--- if approvals feature is active lets, process the approvals for them.  --->
 
 	<cfset variables['extensionRecordSet'] = {} />
@@ -3425,7 +3589,6 @@ the variable will be sure to change value.  -CJ 05/09/2005 --->
 			<cfset variables.extension.insRecord(created_by=request.user.accessName,created_date = now(),scope_siteID=form.siteID,recordset =variables.extensionRecordSet)> 	
 		</cfif>
 	</cfif>
-	
 	<!--- ENDS approvals section on EDIT mode --->
 			<CFMODULE TEMPLATE="#Request.Library.CustomTags.VirtualPath#additionalFields.cfm"
 				  siteid="#form.siteid#"
@@ -3511,11 +3674,11 @@ the variable will be sure to change value.  -CJ 05/09/2005 --->
 			(
 			N'#sData#',
 			<CF_QUERYPARAM VALUE="#ActionID#" CFSQLTYPE="CF_SQL_VARCHAR">,
-			getdate()
+			<CF_QUERYPARAM VALUE="#now()#" CFSQLTYPE="CF_SQL_DATE">
 			)
 		</CFQUERY>
 		<cfcatch type="any">
-			<cfmail to='miguel.aguilar@gensuitellc.com' from='miguel.aguilar@gensuitellc.com' subject='ATS_REDIRECT_DATA - something failed.' type='HTML'>
+			<cfmail to='diego.serrano@gensuitellc.com' from='diego.serrano@gensuitellc.com' subject='ATS_REDIRECT_DATA - something failed.' type='HTML'>
 				<cfdump var="#cfcatch#">
 			</cfmail>
 		</cfcatch>
@@ -3663,6 +3826,9 @@ the variable will be sure to change value.  -CJ 05/09/2005 --->
 <CFSET StatusText = audit.GetStatusTextForDisplay(Status="#Form.Status#", CILINK="#CI_actions_comp#", VerifyDate="#VerifyDate#", VERIFYPERSON="#VerifyBy#", Action="#FORM.Action#", ReOpenStatus="#ReOpenEmail#", EmailStatusText="True")>
 
 <!--- 11/06/02 --->
+
+
+
 <CFIF FORM.firstAction IS "Reject" OR ReOpenEmail IS "yes">
 	<CFQUERY NAME="qGetResponsibleEmail" DATASOURCE="#ODBC#">
 		SELECT CONTACT_EMAIL
