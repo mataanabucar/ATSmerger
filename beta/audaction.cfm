@@ -4,7 +4,7 @@
 <cfset structAppend(variables, variables.audit.ConfigLabels(variables),true)/>
 <!---
 Filename: audaction.cfm
-
+new
 Author			Date		Action
 ------------------------------------------------------------------------------------------------
 Brien Hodges	08/16/02	App Enhancement #2203 - Allow audit to be Verified
